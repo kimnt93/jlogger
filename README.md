@@ -2,23 +2,13 @@
 
 A fast, minimal structured JSON logger for Python.
 
----
-
 ## Installation
-
-```bash
-pip install jlogger
-```
-
-Or from source:
 
 ```bash
 git clone https://github.com/kimnt93/jlogger.git
 cd jlogger
 pip install -e .
 ```
-
----
 
 ## Quick Example
 
@@ -47,8 +37,6 @@ Example output:
 {"ts":"2026-02-21T16:03:32.213341Z","logger":"trade","level":"info","msg":"tick","symbol":"BTCUSDT","price":65000}
 {"ts":"2026-02-21T16:03:32.213341Z","logger":"trade","level":"info","msg":"tick","symbol":"ETHUSDT","price":3200}
 ```
-
----
 
 ## More Examples
 
