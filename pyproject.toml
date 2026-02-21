@@ -1,0 +1,24 @@
+[project]
+name = "jlogger"
+version = "0.1.0"
+description = "Fast structured JSON logger"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "orjson>=3.10.15",
+]
+authors = [
+  {name = "kimnt93"}
+]
+
+keywords = ["logging", "json", "structured-logging", "zerolog", "zap"]
+
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/kimnt93/jlogger"
+Repository = "https://github.com/kimnt93/jlogger"
