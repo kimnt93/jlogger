@@ -16,8 +16,6 @@ pip install -e .
 import datetime
 import jlogger as jlog
 
-import jlogger as jlog
-
 jlog.setTimeFormat(jlog.TimeFormat.RFC3339)
 logger = jlog.getLogger("trade")
 
