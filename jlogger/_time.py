@@ -16,9 +16,8 @@ def set_time_format(fmt: TimeFormat):
 
     elif fmt in (TimeFormat.ISO8601, TimeFormat.RFC3339):
         _time_func = lambda: (
-            datetime.datetime.now(datetime.timezone.utc)
+            datetime.datetime.now()
             .isoformat()
-            .replace("+00:00", "Z")
         )
 
     else:

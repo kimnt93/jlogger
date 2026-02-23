@@ -35,9 +35,7 @@ class LogEvent:
             )
 
 
-# =============================
 # Custom JSON Logger
-# =============================
 class CustomJSONLogger:
     __slots__ = ("_logger", "_base_kv")
 

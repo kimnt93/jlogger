@@ -32,8 +32,8 @@ if __name__ == "__main__":
 Example output:
 
 ```json
-{"ts":"2026-02-21T16:03:32.213341Z","logger":"trade","level":"info","msg":"tick","symbol":"BTCUSDT","price":65000}
-{"ts":"2026-02-21T16:03:32.213341Z","logger":"trade","level":"info","msg":"tick","symbol":"ETHUSDT","price":3200}
+{"time":"2026-02-21T16:03:32.703149","logger":"trade","level":"info","message":"tick","symbol":"BTCUSDT","price":65000}
+{"time":"2026-02-21T16:03:32.703149","logger":"trade","level":"info","message":"tick","symbol":"ETHUSDT","price":3200}
 ```
 
 ## More Examples
