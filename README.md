@@ -1,16 +1,20 @@
 # jlogger
 
 A fast, minimal structured JSON logger for Python, with a Go-style
-(`zerolog`/`zap`) fluent API.
+([`zerolog`][zerolog]/[`zap`][zap]) fluent API.
 
 `jlogger` keeps a tiny Python interface and builds JSON in Rust through a PyO3
-extension, so it does not depend on `orjson` and works on modern CPython
-builds, including free-threaded Python 3.14t.
+extension, so it does not depend on [`orjson`][orjson] and works on modern
+CPython builds, including free-threaded Python 3.14t.
 
 It writes formatted JSON straight to an output stream (default `stderr`,
 override with `setOutput`) instead of going through the stdlib `logging`
 pipeline — no `LogRecord`, no caller stack walk, no handler locks — which is
 what makes it fast.
+
+[zerolog]: https://github.com/rs/zerolog
+[zap]: https://github.com/uber-go/zap
+[orjson]: https://github.com/ijl/orjson
 
 ## Installation
 
@@ -26,9 +30,6 @@ pip install git+https://github.com/kimnt93/jlogger.git
 # uv
 uv pip install git+https://github.com/kimnt93/jlogger.git
 ```
-
-> Use the `git+https://` prefix — a bare `https://.../jlogger.git` URL is not
-> recognized by pip/uv as a VCS source.
 
 Install from source:
 
@@ -104,62 +105,49 @@ a stdlib `logging.Logger` + hand-written JSON formatter, which is the baseline
 | Contender              | What it is                                             |
 | ---------------------- | ------------------------------------------------------ |
 | `jlogger`              | this library (Rust-backed encoder)                     |
-| `stdlib + custom JSON` | `logging.Logger` + hand-written JSON formatter (=1.00×)|
-| `python-json-logger`   | popular `logging.Formatter` that renders JSON          |
-| `structlog`            | popular structured logger with `JSONRenderer`          |
+| `stdlib + custom JSON` | [`logging`][logging] + hand-written JSON formatter (=1.00×) |
+| `python-json-logger`   | popular [`logging.Formatter`][pjl] that renders JSON   |
+| `structlog`            | popular [structured logger][structlog] with `JSONRenderer` |
+
+[logging]: https://docs.python.org/3/library/logging.html
+[pjl]: https://github.com/nhairs/python-json-logger
+[structlog]: https://github.com/hynek/structlog
 
 Every contender writes to an in-memory counting stream (output discarded), so
 the numbers measure formatting + dispatch throughput, not disk speed.
 
-Reference numbers below are CPython 3.12 on x86_64 (`iterations=50,000`, best of
-5). The **speed-up** ratios are stable across CPython 3.10, 3.11, 3.12, 3.13,
-3.14 and free-threaded 3.14t — `jlogger` stays ≈4.2–4.9× on message-only and
-≈2.6–3.2× with fields regardless of version — so a single table is shown here.
-Reproduce the full per-version matrix with `make bench-matrix`.
+Reference numbers below are CPython 3.12 on x86_64 (`iterations=50,000`, mean of
+5 runs). The **speed-up** ratios are stable across CPython 3.10, 3.11, 3.12,
+3.13, 3.14 and free-threaded 3.14t — `jlogger` stays ≈4.2–4.9× on message-only
+and ≈2.8–3.1× with fields regardless of version — so a single table is shown
+here. Reproduce the full per-version matrix with `make bench-matrix`.
 
 **Info, message only**
 
 | logger               | logs/sec | speed-up |
 | -------------------- | -------: | -------: |
-| **jlogger (native)** |  761,299 |    4.22× |
-| structlog            |  222,091 |    1.23× |
-| stdlib + custom JSON |  180,229 |    1.00× |
-| python-json-logger   |  136,877 |    0.76× |
+| **jlogger (native)** |  766,840 |    4.21× |
+| structlog            |  220,833 |    1.21× |
+| stdlib + custom JSON |  182,357 |    1.00× |
+| python-json-logger   |  136,785 |    0.75× |
 
 **Info, message + 5 fields**
 
 | logger               | logs/sec | speed-up |
 | -------------------- | -------: | -------: |
-| **jlogger (native)** |  431,578 |    2.89× |
-| structlog            |  181,812 |    1.22× |
-| stdlib + custom JSON |  149,385 |    1.00× |
-| python-json-logger   |  110,759 |    0.74× |
+| **jlogger (native)** |  433,413 |    2.88× |
+| structlog            |  180,388 |    1.20× |
+| stdlib + custom JSON |  150,294 |    1.00× |
+| python-json-logger   |  111,077 |    0.74× |
 
 **Info, large nested payload**
 
 | logger               | logs/sec | speed-up |
 | -------------------- | -------: | -------: |
-| **jlogger (native)** |  158,907 |    1.47× |
-| structlog            |  126,367 |    1.17× |
-| stdlib + custom JSON |  108,167 |    1.00× |
-| python-json-logger   |   85,817 |    0.79× |
-
-**Disabled** (call below the active level): `jlogger` suppresses ~4M calls/sec
-via a shared no-op event — far ahead of `structlog` (~1.3M/sec) and near-free in
-absolute terms.
-
-Takeaways:
-
-- `jlogger` is the fastest structured logger here — about **4× the stdlib
-  baseline** for message-only, **~3×** with fields, and **~2–3× `structlog`**
-  (the fastest pure-Python option) across payloads.
-- The win comes from bypassing the stdlib `logging` pipeline: no `LogRecord`,
-  no `findCaller()` stack walk, no handler-lock hierarchy. Formatting happens in
-  Rust and the line is written straight to the stream, and scoped loggers share
-  their context dict copy-on-write.
-- The speed-up holds across CPython 3.10→3.14 and free-threaded 3.14t; unlike
-  `orjson`-based setups, the native encoder builds and runs on 3.14t, and falls
-  back to a pure-Python encoder where no prebuilt binary matches.
+| **jlogger (native)** |  166,117 |    1.51× |
+| structlog            |  127,499 |    1.16× |
+| stdlib + custom JSON |  110,119 |    1.00× |
+| python-json-logger   |   87,452 |    0.79× |
 
 Reproduce:
 
