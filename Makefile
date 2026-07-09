@@ -1,31 +1,60 @@
 PYTHON ?= python
 UV ?= uv
 TEST_PYTHON ?= $(UV) run python
+PYTHON_314T ?= python3.14t
 MATURIN ?= $(UV) run --with maturin maturin
+PKG := jlogger
 
-.PHONY: help develop install test build sdist wheel wheel-abi3 wheel-314t check fmt clean
+.PHONY: help native native-314t native-all develop install test test-314t \
+	check fmt build clean
 
 help:
 	@printf '%s\n' \
-		'Targets:' \
-		'  make develop  Build Rust extension in place for local imports' \
-		'  make install   Install the package from source with pip' \
-		'  make test      Run unit tests' \
-		'  make check     Run Rust checks and Python tests' \
-		'  make fmt       Format Rust code' \
-		'  make build     Build wheel and sdist into dist/' \
-		'  make wheel-abi3 Build an abi3 wheel for regular CPython 3.9+' \
-		'  make wheel-314t Build a CPython 3.14t free-threaded wheel' \
-		'  make clean     Remove build artifacts'
+		'Prebuilt-binary workflow (no Rust needed to *install*):' \
+		'  make native       Build abi3 .so (CPython 3.9+) into $(PKG)/ and commit it' \
+		'  make native-314t  Build free-threaded 3.14t .so into $(PKG)/ and commit it' \
+		'  make native-all   Build both prebuilt .so files into $(PKG)/' \
+		'' \
+		'Development:' \
+		'  make develop      Alias for "make native" (build abi3 .so in place)' \
+		'  make install      pip install . (uses the committed .so, no Rust)' \
+		'  make test         Run unit tests' \
+		'  make test-314t    Run unit tests under python3.14t' \
+		'  make check        cargo check + Python tests' \
+		'  make fmt          Format Rust code' \
+		'  make build        Build sdist + wheel into dist/' \
+		'  make clean        Remove build artifacts (keeps committed .so)'
 
-develop:
-	$(MATURIN) develop --uv --skip-install
+# Build the abi3 extension (works on every CPython >= 3.9 for this platform)
+# and drop it straight into the package directory so it can be committed.
+native:
+	$(MATURIN) build --release --features abi3 --out dist
+	@whl=$$(ls -t dist/$(PKG)-*-abi3-*.whl | head -n1); \
+		echo "extracting _native.abi3.so from $$whl"; \
+		unzip -o -j "$$whl" '$(PKG)/_native.abi3.so' -d $(PKG)/ >/dev/null
+	@ls -la $(PKG)/_native.abi3.so
+
+# Build the free-threaded 3.14t extension. abi3 does not cover the "t" ABI,
+# so this is an interpreter-specific build. Requires python3.14t on PATH.
+native-314t:
+	$(MATURIN) build --release --no-default-features --interpreter $(PYTHON_314T) --out dist
+	@whl=$$(ls -t dist/$(PKG)-*-cp314-cp314t-*.whl | head -n1); \
+		echo "extracting 3.14t .so from $$whl"; \
+		unzip -o -j "$$whl" '$(PKG)/_native.cpython-314t-*.so' -d $(PKG)/ >/dev/null
+	@ls -la $(PKG)/_native.cpython-314t-*.so
+
+native-all: native native-314t
+
+develop: native
 
 install:
 	$(PYTHON) -m pip install .
 
 test:
 	$(TEST_PYTHON) -m unittest discover -s tests
+
+test-314t:
+	$(PYTHON_314T) -m unittest discover -s tests
 
 check:
 	cargo check
@@ -35,22 +64,9 @@ fmt:
 	cargo fmt
 
 build:
-	$(MATURIN) build --release --sdist --out dist
-
-sdist:
-	$(MATURIN) sdist --out dist
-
-wheel:
-	$(MATURIN) build --release --out dist
-
-wheel-abi3:
-	$(MATURIN) build --release --features abi3 --out dist
-
-wheel-314t:
-	$(MATURIN) build --release --no-default-features --interpreter python3.14t --out dist
+	$(UV) run --with build $(PYTHON) -m build --out dist
 
 clean:
-	rm -rf build dist target *.egg-info jlogger.egg-info
-	rm -f jlogger/*.so
+	rm -rf build dist target *.egg-info $(PKG).egg-info
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 	find . -type f -name '*.pyc' -delete

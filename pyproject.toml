@@ -1,6 +1,6 @@
 [build-system]
-requires = ["maturin>=1.9.4,<2"]
-build-backend = "maturin"
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "jlogger"
@@ -33,6 +33,21 @@ classifiers = [
 Homepage = "https://github.com/kimnt93/jlogger"
 Repository = "https://github.com/kimnt93/jlogger"
 
+# jlogger ships prebuilt native extensions in jlogger/ (built with maturin/cargo
+# and committed to the repo), so installing from source or from a git URL needs
+# NO Rust toolchain. If no committed .so matches the interpreter/platform, the
+# package transparently falls back to a pure-Python JSON encoder.
+[tool.setuptools]
+packages = ["jlogger"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+jlogger = ["*.so", "*.pyd", "*.dylib", "py.typed"]
+
+# NOTE: pip/uv use the setuptools backend above and never invoke maturin, so
+# installing needs no Rust. The [tool.maturin] block below is only read by the
+# `maturin` CLI (via `make native*`) to (re)build the committed .so files with
+# the correct `jlogger/_native.*` layout.
 [tool.maturin]
 module-name = "jlogger._native"
 python-source = "."

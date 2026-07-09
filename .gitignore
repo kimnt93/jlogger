@@ -8,6 +8,11 @@ __pycache__/
 *.so
 .idea/
 
+# jlogger ships prebuilt native extensions so that installing from source or a
+# git URL does not require a Rust toolchain. Keep these committed.
+!jlogger/_native.abi3.so
+!jlogger/_native*.so
+
 # Distribution / packaging
 .Python
 build/
