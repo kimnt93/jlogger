@@ -6,7 +6,7 @@ MATURIN ?= $(UV) run --with maturin maturin
 PKG := jlogger
 
 .PHONY: help native native-314t native-all develop install test test-314t \
-	bench bench-314t check fmt build clean
+	bench bench-matrix bench-314t check fmt build clean
 
 help:
 	@printf '%s\n' \
@@ -21,6 +21,7 @@ help:
 		'  make test         Run unit tests' \
 		'  make test-314t    Run unit tests under python3.14t' \
 		'  make bench        Benchmark vs stdlib/python-json-logger/structlog' \
+		'  make bench-matrix Benchmark across multiple Python versions (uv)' \
 		'  make bench-314t   Same benchmark under free-threaded python3.14t' \
 		'  make check        cargo check + Python tests' \
 		'  make fmt          Format Rust code' \
@@ -61,6 +62,9 @@ test-314t:
 bench:
 	PYTHONPATH=. $(UV) run --with structlog --with python-json-logger \
 		python benchmarks/bench.py
+
+bench-matrix:
+	python3 benchmarks/run_versions.py
 
 bench-314t:
 	PYTHONPATH=. $(UV) run --with structlog --with python-json-logger \

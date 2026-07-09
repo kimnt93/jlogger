@@ -18,7 +18,7 @@ Run (installs the comparison libs into an ephemeral env):
 
 Options:
     --iterations N   log lines per timed run (default 50000)
-    --repeat R       timed runs per case, best is kept (default 5)
+    --repeat R       timed runs per case, averaged (default 5)
     --markdown       print GitHub-flavored Markdown tables (default)
     --plain          print aligned plain-text tables
     --json           emit machine-readable JSON (used by run_versions.py)
@@ -268,20 +268,20 @@ def build_structlog() -> Optional[Contender]:
 
 
 def measure(fn: Callable[[], None], stream: CountingStream, n: int, repeat: int):
-    best_elapsed = float("inf")
-    best_bytes = 0
-    best_lines = 0
+    total_elapsed = 0.0
+    last_bytes = 0
+    last_lines = 0
     for _ in range(repeat):
         stream.reset()
         start = time.perf_counter()
         for _ in range(n):
             fn()
-        elapsed = time.perf_counter() - start
-        if elapsed < best_elapsed:
-            best_elapsed = elapsed
-            best_bytes = stream.n_bytes
-            best_lines = stream.n_lines
-    return best_elapsed, best_bytes, best_lines
+        total_elapsed += time.perf_counter() - start
+        # byte/line counts are deterministic across runs; keep the last.
+        last_bytes = stream.n_bytes
+        last_lines = stream.n_lines
+    avg_elapsed = total_elapsed / repeat
+    return avg_elapsed, last_bytes, last_lines
 
 
 def run_scenario(
@@ -431,7 +431,7 @@ def main() -> None:
         gil = "  |  GIL: " + ("on" if sys._is_gil_enabled() else "off (free-threaded)")
 
     print(f"jlogger benchmark  |  {py}{gil}")
-    print(f"iterations={n:,}  repeat={repeat}  (best run kept)")
+    print(f"iterations={n:,}  repeat={repeat}  (mean of {repeat} runs)")
     print(f"speed-up is relative to '{BASELINE}' (= 1.00x)\n")
 
     for _, title in SCENARIOS:

@@ -97,71 +97,77 @@ PYTHONPATH=. python examples/levels.py
 
 ## Benchmarks
 
-`jlogger` is benchmarked against three common ways to emit JSON logs in Python:
+Two metrics only: **logs/sec** (higher is better) and **speed-up** relative to
+a stdlib `logging.Logger` + hand-written JSON formatter, which is the baseline
+(**1.00×**). Contenders:
 
 | Contender              | What it is                                             |
 | ---------------------- | ------------------------------------------------------ |
 | `jlogger`              | this library (Rust-backed encoder)                     |
-| `stdlib + custom JSON` | `logging.Logger` with a hand-written JSON formatter    |
+| `stdlib + custom JSON` | `logging.Logger` + hand-written JSON formatter (=1.00×)|
 | `python-json-logger`   | popular `logging.Formatter` that renders JSON          |
 | `structlog`            | popular structured logger with `JSONRenderer`          |
 
-Every contender writes to an in-memory counting stream (bytes and lines are
-tallied, output is discarded), so the numbers measure formatting + dispatch
-throughput, not disk speed. Higher `logs/sec` and `MB/sec` are better; lower
-`µs/op` is better. Byte counts differ slightly because each library formats the
-record differently.
+Every contender writes to an in-memory counting stream (output discarded), so
+the numbers measure formatting + dispatch throughput, not disk speed.
 
-Results below are from CPython 3.12 on x86_64 (`iterations=50,000`, best of 5).
-Numbers are relative — rerun on your machine with `make bench`
-(or `make bench-314t` for free-threaded Python).
+Reference numbers below are CPython 3.12 on x86_64 (`iterations=50,000`, best of
+5). The **speed-up** ratios are stable across CPython 3.10, 3.11, 3.12, 3.13,
+3.14 and free-threaded 3.14t — `jlogger` stays ≈4.2–4.9× on message-only and
+≈2.6–3.2× with fields regardless of version — so a single table is shown here.
+Reproduce the full per-version matrix with `make bench-matrix`.
 
 **Info, message only**
 
-| logger               |  µs/op | logs/sec | MB/sec | bytes/log |
-| -------------------- | -----: | -------: | -----: | --------: |
-| **jlogger (native)** |  1.416 |  706,155 |   65.8 |        98 |
-| structlog            |  4.549 |  219,853 |   19.3 |        92 |
-| stdlib + custom JSON |  5.530 |  180,825 |   17.5 |       102 |
-| python-json-logger   |  7.327 |  136,480 |   15.4 |       118 |
+| logger               | logs/sec | speed-up |
+| -------------------- | -------: | -------: |
+| **jlogger (native)** |  761,299 |    4.22× |
+| structlog            |  222,091 |    1.23× |
+| stdlib + custom JSON |  180,229 |    1.00× |
+| python-json-logger   |  136,877 |    0.76× |
 
 **Info, message + 5 fields**
 
-| logger               |  µs/op | logs/sec | MB/sec | bytes/log |
-| -------------------- | -----: | -------: | -----: | --------: |
-| **jlogger (native)** |  2.322 |  430,610 |   87.0 |       212 |
-| structlog            |  5.449 |  183,526 |   37.8 |       216 |
-| stdlib + custom JSON |  6.680 |  149,692 |   30.8 |       216 |
-| python-json-logger   |  8.958 |  111,629 |   25.8 |       242 |
+| logger               | logs/sec | speed-up |
+| -------------------- | -------: | -------: |
+| **jlogger (native)** |  431,578 |    2.89× |
+| structlog            |  181,812 |    1.22× |
+| stdlib + custom JSON |  149,385 |    1.00× |
+| python-json-logger   |  110,759 |    0.74× |
 
 **Info, large nested payload**
 
-| logger               |   µs/op | logs/sec | MB/sec | bytes/log |
-| -------------------- | ------: | -------: | -----: | --------: |
-| **jlogger (native)** |   6.066 |  164,861 |   85.5 |       544 |
-| structlog            |   7.898 |  126,614 |   71.5 |       592 |
-| stdlib + custom JSON |   9.239 |  108,239 |   56.5 |       548 |
-| python-json-logger   |  11.610 |   86,131 |   50.8 |       618 |
+| logger               | logs/sec | speed-up |
+| -------------------- | -------: | -------: |
+| **jlogger (native)** |  158,907 |    1.47× |
+| structlog            |  126,367 |    1.17× |
+| stdlib + custom JSON |  108,167 |    1.00× |
+| python-json-logger   |   85,817 |    0.79× |
 
-**Disabled** (call below the active level — should be near-free): `jlogger`
-suppresses ~3.8M calls/sec (0.27 µs/op) via a shared no-op event, ahead of
-`structlog` (~1.3M/sec).
+**Disabled** (call below the active level): `jlogger` suppresses ~4M calls/sec
+via a shared no-op event — far ahead of `structlog` (~1.3M/sec) and near-free in
+absolute terms.
 
 Takeaways:
 
-- `jlogger` is the fastest here — roughly **2–3× `structlog`** (the fastest
-  pure-Python structured logger) and **3–5×** the stdlib and
-  `python-json-logger` approaches for typical payloads.
+- `jlogger` is the fastest structured logger here — about **4× the stdlib
+  baseline** for message-only, **~3×** with fields, and **~2–3× `structlog`**
+  (the fastest pure-Python option) across payloads.
 - The win comes from bypassing the stdlib `logging` pipeline: no `LogRecord`,
   no `findCaller()` stack walk, no handler-lock hierarchy. Formatting happens in
-  Rust and the line is written straight to the stream. Scoped loggers share
-  their context dict copy-on-write, so `.info().msg(...)` allocates almost
-  nothing.
-- Unlike `orjson`-based setups, `jlogger`'s native encoder builds and runs on
-  free-threaded CPython 3.14t (where it is even faster — see `make bench-314t`);
-  on platforms with no matching prebuilt binary it falls back to a pure-Python
-  encoder automatically.
+  Rust and the line is written straight to the stream, and scoped loggers share
+  their context dict copy-on-write.
+- The speed-up holds across CPython 3.10→3.14 and free-threaded 3.14t; unlike
+  `orjson`-based setups, the native encoder builds and runs on 3.14t, and falls
+  back to a pure-Python encoder where no prebuilt binary matches.
 
-The full benchmark (including the "message only" and "disabled" cases and
-`--iterations`/`--repeat` flags) lives in
-[`benchmarks/bench.py`](benchmarks/bench.py).
+Reproduce:
+
+```bash
+make bench          # single interpreter (current uv default)
+make bench-matrix   # across CPython 3.10–3.14 + 3.14t via uv
+```
+
+Both wrap [`benchmarks/bench.py`](benchmarks/bench.py) and
+[`benchmarks/run_versions.py`](benchmarks/run_versions.py); pass
+`--iterations`/`--repeat` to tune.
