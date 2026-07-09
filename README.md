@@ -10,37 +10,28 @@ builds, including free-threaded Python 3.14t.
 ## Installation
 
 `jlogger` ships **prebuilt native extensions** in the repo, so installing does
-**not** require a Rust toolchain. Pick whichever fits your workflow:
+**not** require a Rust toolchain.
+
+Install from a git URL:
 
 ```bash
-# from a git URL (pip)
+# pip
 pip install git+https://github.com/kimnt93/jlogger.git
 
-# from a git URL (uv)
+# uv
 uv pip install git+https://github.com/kimnt93/jlogger.git
-
-# from a local clone
-git clone https://github.com/kimnt93/jlogger.git
-cd jlogger
-pip install .
 ```
 
-> Use the `git+https://` prefix for git installs — a bare
-> `https://.../jlogger.git` URL is not recognized by pip/uv as a VCS source.
+> Use the `git+https://` prefix — a bare `https://.../jlogger.git` URL is not
+> recognized by pip/uv as a VCS source.
 
-### How it works across Python versions
+Install from source:
 
-The repo commits two native builds under `jlogger/`:
-
-| File                                         | Used by                                   |
-| -------------------------------------------- | ----------------------------------------- |
-| `_native.abi3.so`                            | Regular CPython 3.9+ (single abi3 binary) |
-| `_native.cpython-314t-x86_64-linux-gnu.so`   | Free-threaded CPython 3.14t               |
-
-If no committed binary matches your interpreter or platform (e.g. macOS,
-Windows, or a different CPU), `jlogger` transparently falls back to a
-pure-Python JSON encoder — it still works, just without the Rust speedup. The
-prebuilt binaries above are Linux/x86_64.
+```bash
+git clone https://github.com/kimnt93/jlogger.git
+cd jlogger
+make install     # runs `pip install .`
+```
 
 ## Quick Example
 
@@ -99,33 +90,69 @@ Run one with the repo on the path:
 PYTHONPATH=. python examples/levels.py
 ```
 
-## Development
+## Benchmarks
 
-Building the native extension requires a Rust toolchain. The Makefile uses
-`uv run --with maturin` so you do not need `maturin` in your active environment.
+`jlogger` is benchmarked against three common ways to emit JSON logs in Python:
 
-```bash
-make native       # build abi3 .so (CPython 3.9+) into jlogger/ and commit it
-make native-314t  # build free-threaded 3.14t .so into jlogger/ (needs python3.14t)
-make native-all   # build both
+| Contender              | What it is                                             |
+| ---------------------- | ------------------------------------------------------ |
+| `jlogger`              | this library (Rust-backed encoder)                     |
+| `stdlib + custom JSON` | `logging.Logger` with a hand-written JSON formatter    |
+| `python-json-logger`   | popular `logging.Formatter` that renders JSON          |
+| `structlog`            | popular structured logger with `JSONRenderer`          |
 
-make develop      # alias for `make native`
-make install      # pip install . (uses the committed .so, no Rust)
-make test         # run unit tests
-make test-314t    # run unit tests under python3.14t
-make check        # cargo check + Python tests
-make fmt          # format Rust code
-make build        # build sdist + wheel into dist/
-make clean        # remove build artifacts (keeps committed .so)
-```
+Every contender writes to an in-memory counting stream (bytes and lines are
+tallied, output is discarded), so the numbers measure formatting + dispatch
+throughput, not disk speed. Higher `logs/sec` and `MB/sec` are better; lower
+`µs/op` is better. Byte counts differ slightly because each library formats the
+record differently.
 
-### Releasing new binaries
+Results below are from CPython 3.12 on x86_64 (`iterations=50,000`, best of 5).
+Numbers are relative — rerun on your machine with `make bench`
+(or `make bench-314t` for free-threaded Python).
 
-After changing the Rust code, rebuild and commit the binaries so git installs
-keep working without Rust:
+**Info, message only**
 
-```bash
-make native-all
-git add jlogger/_native.abi3.so jlogger/_native.cpython-314t-*.so
-git commit -m "Rebuild native extensions"
-```
+| logger               |  µs/op | logs/sec | MB/sec | bytes/log |
+| -------------------- | -----: | -------: | -----: | --------: |
+| structlog            |  4.487 |  222,868 |   19.6 |        92 |
+| **jlogger (native)** |  4.734 |  211,227 |   20.7 |       103 |
+| stdlib + custom JSON |  5.496 |  181,963 |   17.7 |       102 |
+| python-json-logger   |  7.224 |  138,426 |   15.6 |       118 |
+
+**Info, message + 5 fields**
+
+| logger               |  µs/op | logs/sec | MB/sec | bytes/log |
+| -------------------- | -----: | -------: | -----: | --------: |
+| structlog            |  5.445 |  183,659 |   37.8 |       216 |
+| **jlogger (native)** |  5.728 |  174,580 |   36.1 |       217 |
+| stdlib + custom JSON |  6.620 |  151,050 |   31.1 |       216 |
+| python-json-logger   |  8.853 |  112,955 |   26.1 |       242 |
+
+**Info, large nested payload**
+
+| logger               |   µs/op | logs/sec | MB/sec | bytes/log |
+| -------------------- | ------: | -------: | -----: | --------: |
+| structlog            |   7.839 |  127,566 |   72.0 |       592 |
+| stdlib + custom JSON |   9.078 |  110,151 |   57.5 |       548 |
+| **jlogger (native)** |   9.599 |  104,178 |   54.5 |       549 |
+| python-json-logger   |  11.517 |   86,829 |   51.2 |       618 |
+
+**Disabled** (call below the active level — should be near-free): `jlogger`
+suppresses ~2.3M calls/sec (0.44 µs/op) before doing any formatting.
+
+Takeaways:
+
+- `jlogger` is on par with `structlog` — the fastest pure-Python structured
+  logger here — and clearly faster than the stdlib and `python-json-logger`
+  approaches for typical payloads.
+- `structlog` edges ahead mainly because it bypasses the stdlib `logging`
+  pipeline, while `jlogger`, `stdlib`, and `python-json-logger` all pay for
+  `LogRecord` creation and the handler lock.
+- Unlike `orjson`-based setups, `jlogger`'s native encoder builds and runs on
+  free-threaded CPython 3.14t; on platforms with no matching prebuilt binary it
+  falls back to a pure-Python encoder automatically.
+
+The full benchmark (including the "message only" and "disabled" cases and
+`--iterations`/`--repeat` flags) lives in
+[`benchmarks/bench.py`](benchmarks/bench.py).
