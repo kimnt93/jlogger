@@ -21,6 +21,11 @@ Options:
     --repeat R       timed runs per case, best is kept (default 5)
     --markdown       print GitHub-flavored Markdown tables (default)
     --plain          print aligned plain-text tables
+    --json           emit machine-readable JSON (used by run_versions.py)
+
+Each table shows only two metrics: logs/sec and speed-up relative to the
+'stdlib + custom JSON' baseline (defined as 1.00x). To compare across Python
+versions, use benchmarks/run_versions.py.
 """
 
 from __future__ import annotations
@@ -123,25 +128,14 @@ class Result:
 def build_jlogger() -> Optional[Contender]:
     try:
         import jlogger as jlog
-        from jlogger.formatter import JsonFormatter
     except Exception:
         return None
 
     stream = CountingStream()
+    jlog.set_output(stream)
 
-    def make(name: str, level: int):
-        logger = jlog.getLogger(name)
-        underlying = logging.getLogger(name)
-        underlying.handlers.clear()
-        handler = logging.StreamHandler(stream)
-        handler.setFormatter(JsonFormatter())
-        underlying.addHandler(handler)
-        underlying.propagate = False
-        underlying.setLevel(level)
-        return logger
-
-    info_logger = make("bench.jlogger.info", logging.INFO)
-    off_logger = make("bench.jlogger.off", logging.WARNING)
+    info_logger = jlog.getLogger("bench.jlogger", level="info")
+    off_logger = jlog.getLogger("bench.jlogger", level="warning")
 
     label = "jlogger"
     try:
@@ -319,38 +313,41 @@ def run_scenario(
 
 
 # --------------------------------------------------------------------------- #
-# Rendering
+# Rendering  (only two metrics: logs/sec and speed-up vs the stdlib baseline)
 # --------------------------------------------------------------------------- #
 
-HEADERS = ["logger", "µs/op", "logs/sec", "lines/sec", "MB/sec", "bytes/log"]
+BASELINE = "stdlib + custom JSON"  # this contender is defined as 1.00x
+HEADERS = ["logger", "logs/sec", "speed-up"]
 
 
-def _row(r: Result) -> List[str]:
-    return [
-        r.logger,
-        f"{r.per_op_us:.3f}",
-        f"{r.ops_per_sec:,.0f}",
-        f"{r.lines_per_sec:,.0f}",
-        f"{r.mb_per_sec:,.1f}",
-        f"{r.bytes_per_log:.0f}",
-    ]
+def _speedups(results: List[Result]) -> Dict[str, float]:
+    base = next((r.ops_per_sec for r in results if r.logger == BASELINE), None)
+    out: Dict[str, float] = {}
+    for r in results:
+        out[r.logger] = (r.ops_per_sec / base) if base else float("nan")
+    return out
+
+
+def _row(r: Result, speedup: float) -> List[str]:
+    return [r.logger, f"{r.ops_per_sec:,.0f}", f"{speedup:.2f}x"]
 
 
 def render_markdown(scenario: str, results: List[Result]) -> str:
-    # rank by logs/sec, fastest first
+    speed = _speedups(results)
     rows = sorted(results, key=lambda r: r.ops_per_sec, reverse=True)
     lines = [f"#### {scenario}", ""]
     lines.append("| " + " | ".join(HEADERS) + " |")
     lines.append("| " + " | ".join("---" for _ in HEADERS) + " |")
     for r in rows:
-        lines.append("| " + " | ".join(_row(r)) + " |")
+        lines.append("| " + " | ".join(_row(r, speed[r.logger])) + " |")
     lines.append("")
     return "\n".join(lines)
 
 
 def render_plain(scenario: str, results: List[Result]) -> str:
+    speed = _speedups(results)
     rows = sorted(results, key=lambda r: r.ops_per_sec, reverse=True)
-    table = [HEADERS] + [_row(r) for r in rows]
+    table = [HEADERS] + [_row(r, speed[r.logger]) for r in rows]
     widths = [max(len(row[i]) for row in table) for i in range(len(HEADERS))]
     out = [scenario, ""]
     for idx, row in enumerate(table):
@@ -365,6 +362,21 @@ def render_plain(scenario: str, results: List[Result]) -> str:
 # Main
 # --------------------------------------------------------------------------- #
 
+SCENARIOS = [
+    ("simple", "Info, message only"),
+    ("fields", "Info, message + 5 fields"),
+    ("nested", "Info, large nested payload"),
+    ("disabled", "Disabled (below level, suppressed)"),
+]
+
+
+def _py_label() -> str:
+    v = sys.version_info
+    label = f"{v.major}.{v.minor}"
+    if hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled():
+        label += "t"
+    return label
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -372,9 +384,10 @@ def main() -> None:
     parser.add_argument("--repeat", type=int, default=5)
     parser.add_argument("--plain", action="store_true", help="plain-text tables")
     parser.add_argument("--markdown", action="store_true", help="markdown tables")
+    parser.add_argument(
+        "--json", action="store_true", help="emit machine-readable JSON (for the matrix runner)"
+    )
     args = parser.parse_args()
-
-    render = render_plain if args.plain else render_markdown
 
     builders = [
         build_jlogger,
@@ -388,25 +401,41 @@ def main() -> None:
         print("No loggers available to benchmark.", file=sys.stderr)
         raise SystemExit(1)
 
-    scenarios = [
-        ("simple", "Info, message only"),
-        ("fields", f"Info, message + {len(FIELDS)} fields"),
-        ("nested", "Info, large nested payload"),
-        ("disabled", "Disabled (below level, suppressed)"),
-    ]
-
     n, repeat = args.iterations, args.repeat
+
+    all_results = {
+        title: run_scenario(contenders, attr, title, n, repeat)
+        for attr, title in SCENARIOS
+    }
+
+    if args.json:
+        payload = {
+            "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            "label": _py_label(),
+            "gil": not (hasattr(sys, "_is_gil_enabled") and not sys._is_gil_enabled()),
+            "iterations": n,
+            "repeat": repeat,
+            "baseline": BASELINE,
+            "scenarios": {
+                title: {r.logger: r.ops_per_sec for r in results}
+                for title, results in all_results.items()
+            },
+        }
+        print(json.dumps(payload))
+        return
+
+    render = render_plain if args.plain else render_markdown
     py = f"CPython {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
     gil = ""
     if hasattr(sys, "_is_gil_enabled"):
         gil = "  |  GIL: " + ("on" if sys._is_gil_enabled() else "off (free-threaded)")
 
     print(f"jlogger benchmark  |  {py}{gil}")
-    print(f"iterations={n:,}  repeat={repeat}  (best run kept)\n")
+    print(f"iterations={n:,}  repeat={repeat}  (best run kept)")
+    print(f"speed-up is relative to '{BASELINE}' (= 1.00x)\n")
 
-    for attr, title in scenarios:
-        results = run_scenario(contenders, attr, title, n, repeat)
-        print(render(title, results))
+    for _, title in SCENARIOS:
+        print(render(title, all_results[title]))
 
 
 if __name__ == "__main__":

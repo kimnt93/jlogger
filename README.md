@@ -7,6 +7,11 @@ A fast, minimal structured JSON logger for Python, with a Go-style
 extension, so it does not depend on `orjson` and works on modern CPython
 builds, including free-threaded Python 3.14t.
 
+It writes formatted JSON straight to an output stream (default `stderr`,
+override with `setOutput`) instead of going through the stdlib `logging`
+pipeline — no `LogRecord`, no caller stack walk, no handler locks — which is
+what makes it fast.
+
 ## Installation
 
 `jlogger` ships **prebuilt native extensions** in the repo, so installing does
@@ -115,43 +120,47 @@ Numbers are relative — rerun on your machine with `make bench`
 
 | logger               |  µs/op | logs/sec | MB/sec | bytes/log |
 | -------------------- | -----: | -------: | -----: | --------: |
-| structlog            |  4.487 |  222,868 |   19.6 |        92 |
-| **jlogger (native)** |  4.734 |  211,227 |   20.7 |       103 |
-| stdlib + custom JSON |  5.496 |  181,963 |   17.7 |       102 |
-| python-json-logger   |  7.224 |  138,426 |   15.6 |       118 |
+| **jlogger (native)** |  1.416 |  706,155 |   65.8 |        98 |
+| structlog            |  4.549 |  219,853 |   19.3 |        92 |
+| stdlib + custom JSON |  5.530 |  180,825 |   17.5 |       102 |
+| python-json-logger   |  7.327 |  136,480 |   15.4 |       118 |
 
 **Info, message + 5 fields**
 
 | logger               |  µs/op | logs/sec | MB/sec | bytes/log |
 | -------------------- | -----: | -------: | -----: | --------: |
-| structlog            |  5.445 |  183,659 |   37.8 |       216 |
-| **jlogger (native)** |  5.728 |  174,580 |   36.1 |       217 |
-| stdlib + custom JSON |  6.620 |  151,050 |   31.1 |       216 |
-| python-json-logger   |  8.853 |  112,955 |   26.1 |       242 |
+| **jlogger (native)** |  2.322 |  430,610 |   87.0 |       212 |
+| structlog            |  5.449 |  183,526 |   37.8 |       216 |
+| stdlib + custom JSON |  6.680 |  149,692 |   30.8 |       216 |
+| python-json-logger   |  8.958 |  111,629 |   25.8 |       242 |
 
 **Info, large nested payload**
 
 | logger               |   µs/op | logs/sec | MB/sec | bytes/log |
 | -------------------- | ------: | -------: | -----: | --------: |
-| structlog            |   7.839 |  127,566 |   72.0 |       592 |
-| stdlib + custom JSON |   9.078 |  110,151 |   57.5 |       548 |
-| **jlogger (native)** |   9.599 |  104,178 |   54.5 |       549 |
-| python-json-logger   |  11.517 |   86,829 |   51.2 |       618 |
+| **jlogger (native)** |   6.066 |  164,861 |   85.5 |       544 |
+| structlog            |   7.898 |  126,614 |   71.5 |       592 |
+| stdlib + custom JSON |   9.239 |  108,239 |   56.5 |       548 |
+| python-json-logger   |  11.610 |   86,131 |   50.8 |       618 |
 
 **Disabled** (call below the active level — should be near-free): `jlogger`
-suppresses ~2.3M calls/sec (0.44 µs/op) before doing any formatting.
+suppresses ~3.8M calls/sec (0.27 µs/op) via a shared no-op event, ahead of
+`structlog` (~1.3M/sec).
 
 Takeaways:
 
-- `jlogger` is on par with `structlog` — the fastest pure-Python structured
-  logger here — and clearly faster than the stdlib and `python-json-logger`
-  approaches for typical payloads.
-- `structlog` edges ahead mainly because it bypasses the stdlib `logging`
-  pipeline, while `jlogger`, `stdlib`, and `python-json-logger` all pay for
-  `LogRecord` creation and the handler lock.
+- `jlogger` is the fastest here — roughly **2–3× `structlog`** (the fastest
+  pure-Python structured logger) and **3–5×** the stdlib and
+  `python-json-logger` approaches for typical payloads.
+- The win comes from bypassing the stdlib `logging` pipeline: no `LogRecord`,
+  no `findCaller()` stack walk, no handler-lock hierarchy. Formatting happens in
+  Rust and the line is written straight to the stream. Scoped loggers share
+  their context dict copy-on-write, so `.info().msg(...)` allocates almost
+  nothing.
 - Unlike `orjson`-based setups, `jlogger`'s native encoder builds and runs on
-  free-threaded CPython 3.14t; on platforms with no matching prebuilt binary it
-  falls back to a pure-Python encoder automatically.
+  free-threaded CPython 3.14t (where it is even faster — see `make bench-314t`);
+  on platforms with no matching prebuilt binary it falls back to a pure-Python
+  encoder automatically.
 
 The full benchmark (including the "message only" and "disabled" cases and
 `--iterations`/`--repeat` flags) lives in

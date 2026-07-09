@@ -1,19 +1,23 @@
-import logging
 from typing import Optional, Union
-from .config import setup_logging
+
+from . import config
+from ._time import set_time_format as _set_time_format
 from .logger import Logger
 from .timefmt import TimeFormat
-from ._time import set_time_format as _set_time_format
+
+
+def getLogger(name: Optional[str] = None, level: Union[str, int, None] = None) -> Logger:
+    lvl = config.normalize_level(level) if level is not None else None
+    return Logger(name or "app", level=lvl)
 
 
 def setLevel(level: Union[str, int]) -> None:
-    setup_logging(level)
-    logging.getLogger().setLevel(_normalize_level(level))
+    config.set_level(level)
 
 
-def getLogger(name: Optional[str] = None) -> Logger:
-    setup_logging()
-    return Logger(logging.getLogger(name or "app"))
+def setOutput(writer) -> None:
+    """Send log lines to ``writer`` (anything with a ``write(str)`` method)."""
+    config.set_writer(writer)
 
 
 def setTimeFormat(fmt: Union[str, TimeFormat]) -> None:
@@ -22,19 +26,18 @@ def setTimeFormat(fmt: Union[str, TimeFormat]) -> None:
     _set_time_format(fmt)
 
 
-def get_logger(name: Optional[str] = None) -> Logger:
-    return getLogger(name)
+# snake_case aliases
+def get_logger(name: Optional[str] = None, level: Union[str, int, None] = None) -> Logger:
+    return getLogger(name, level)
 
 
 def set_level(level: Union[str, int]) -> None:
     setLevel(level)
 
 
+def set_output(writer) -> None:
+    setOutput(writer)
+
+
 def set_time_format(fmt: Union[str, TimeFormat]) -> None:
     setTimeFormat(fmt)
-
-
-def _normalize_level(level: Union[str, int]) -> Union[str, int]:
-    if isinstance(level, str):
-        return level.upper()
-    return level
