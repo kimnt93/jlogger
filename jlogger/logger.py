@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Mapping, Optional, Union
 
 
 class LogEvent:
@@ -19,6 +19,14 @@ class LogEvent:
         self._kv[key] = value
         return self
 
+    def with_values(self, **values: Any) -> "LogEvent":
+        self._kv.update(values)
+        return self
+
+    def with_dict(self, values: Mapping[str, Any]) -> "LogEvent":
+        self._kv.update(values)
+        return self
+
     def with_error(self, error: Union[Exception, None]) -> "LogEvent":
         if error is None:
             return self
@@ -35,7 +43,6 @@ class LogEvent:
             )
 
 
-# Custom JSON Logger
 class CustomJSONLogger:
     __slots__ = ("_logger", "_base_kv")
 
@@ -50,6 +57,16 @@ class CustomJSONLogger:
     def with_value(self, key: str, value: Any) -> "CustomJSONLogger":
         new_kv = dict(self._base_kv)
         new_kv[key] = value
+        return CustomJSONLogger(self._logger, new_kv)
+
+    def with_values(self, **values: Any) -> "CustomJSONLogger":
+        new_kv = dict(self._base_kv)
+        new_kv.update(values)
+        return CustomJSONLogger(self._logger, new_kv)
+
+    def with_dict(self, values: Mapping[str, Any]) -> "CustomJSONLogger":
+        new_kv = dict(self._base_kv)
+        new_kv.update(values)
         return CustomJSONLogger(self._logger, new_kv)
 
     def with_error(self, error: Union[Exception, None]) -> "CustomJSONLogger":
@@ -71,8 +88,14 @@ class CustomJSONLogger:
     def warning(self) -> LogEvent:
         return LogEvent(self._logger, logging.WARNING, self._base_kv)
 
+    def warn(self) -> LogEvent:
+        return self.warning()
+
     def error(self) -> LogEvent:
         return LogEvent(self._logger, logging.ERROR, self._base_kv)
 
     def critical(self) -> LogEvent:
         return LogEvent(self._logger, logging.CRITICAL, self._base_kv)
+
+
+Logger = CustomJSONLogger

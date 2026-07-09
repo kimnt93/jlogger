@@ -9,13 +9,15 @@ _lock = threading.Lock()
 _configured = False
 
 
-def setup_logging(level: Union[str, None] = None) -> None:
+def setup_logging(level: Union[str, int, None] = None) -> None:
     """
     Initialize root logging once (thread-safe).
     """
     global _configured
 
     if _configured:
+        if level is not None:
+            logging.getLogger().setLevel(_normalize_level(level))
         return
 
     with _lock:
@@ -28,9 +30,15 @@ def setup_logging(level: Union[str, None] = None) -> None:
         root = logging.getLogger()
 
         lvl = level or os.environ.get("LOG_LEVEL", "INFO")
-        root.setLevel(lvl.upper())
+        root.setLevel(_normalize_level(lvl))
 
         root.handlers.clear()
         root.addHandler(handler)
 
         _configured = True
+
+
+def _normalize_level(level: Union[str, int]) -> Union[str, int]:
+    if isinstance(level, str):
+        return level.upper()
+    return level

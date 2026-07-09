@@ -1,12 +1,14 @@
+[build-system]
+requires = ["maturin>=1.9.4,<2"]
+build-backend = "maturin"
+
 [project]
 name = "jlogger"
 version = "0.1.0"
 description = "Fast structured JSON logger"
 readme = "README.md"
-requires-python = ">=3.8"
-dependencies = [
-    "orjson>=3.10.15",
-]
+requires-python = ">=3.9"
+dependencies = []
 authors = [
   {name = "kimnt93"}
 ]
@@ -15,6 +17,14 @@ keywords = ["logging", "json", "structured-logging", "zerolog", "zap"]
 
 classifiers = [
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Rust",
+  "Programming Language :: Python :: Implementation :: CPython",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
 ]
@@ -22,3 +32,8 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/kimnt93/jlogger"
 Repository = "https://github.com/kimnt93/jlogger"
+
+[tool.maturin]
+module-name = "jlogger._native"
+python-source = "."
+include = [{ path = "jlogger/py.typed", format = "wheel" }]
